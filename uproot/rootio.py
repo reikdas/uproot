@@ -720,7 +720,11 @@ def _defineclasses(streamerinfos, classes):
                     recarray.append("raise ValueError('not a recarray')")
 
                 elif isinstance(element, TStreamerBase):
+                    code.append('        print("{0}")'.format(_safename(element._fName)))
+                    code.append("        begin = cursor.index")
                     code.append("        {0}._readinto(self, source, cursor, context, parent)".format(_safename(element._fName)))
+                    code.append("        end = cursor.index")
+                    code.append("        print(source.data(begin, end).tobytes())")
                     bases.append(_safename(element._fName))
 
                 elif isinstance(element, TStreamerBasicPointer):
@@ -733,13 +737,21 @@ def _defineclasses(streamerinfos, classes):
                     code.append("        fBasketSeek_dtype = cls.{0}".format(dtypename))
                     if streamerinfo._fName == b"TBranch" and element._fName == b"fBasketSeek":
                         code.append("        if getattr(context, \"speedbump\", True):")
+                        code.append("            print('Skip')")
+                        code.append("            print(uproot.source.cursor.Cursor(cursor.index).bytes(source, 1).tostring())")
                         code.append("            if cursor.bytes(source, 1)[0] == 2:")
                         code.append("                fBasketSeek_dtype = numpy.dtype('>i8')")
                     else:
                         code.append("        if getattr(context, \"speedbump\", True):")
+                        code.append("            print('Skip')")
+                        code.append("            print(uproot.source.cursor.Cursor(cursor.index).bytes(source, 1).tostring())")
                         code.append("            cursor.skip(1)")
 
+                    code.append("        begin = cursor.index")
                     code.append("        self._{0} = cursor.array(source, self._{1}, fBasketSeek_dtype)".format(_safename(element._fName), _safename(element._fCountName)))
+                    code.append("        end = cursor.index")
+                    code.append("        print('{0}')".format(_safename(element._fName)))
+                    code.append("        print(source.data(begin, end).tobytes())")
                     fields.append(_safename(element._fName))
                     recarray.append("raise ValueError('not a recarray')")
 
@@ -757,11 +769,14 @@ def _defineclasses(streamerinfos, classes):
                         if elementi + 1 == len(streamerinfo._fElements) or not isinstance(streamerinfo._fElements[elementi + 1], TStreamerBasicType) or streamerinfo._fElements[elementi + 1]._fArrayLength != 0:
                             formatnum = len(formats) + 1
                             formats["_format{0}".format(formatnum)] = "struct.Struct('>{0}')".format(basicletters)
-
+                            code.append("        print('{0}')".format(basicnames[0]))
+                            code.append("        begin = cursor.index")
                             if len(basicnames) == 1:
                                 code.append("        {0} = cursor.field(source, cls._format{1})".format(basicnames[0], formatnum))
                             else:
                                 code.append("        {0} = cursor.fields(source, cls._format{1})".format(", ".join(basicnames), formatnum))
+                            code.append("        end = cursor.index")
+                            code.append("        print(source.data(begin, end).tobytes())")
 
                             basicnames = []
                             basicletters = ""
@@ -769,7 +784,11 @@ def _defineclasses(streamerinfos, classes):
                     else:
                         dtypename = "_dtype{0}".format(len(dtypes) + 1)
                         fielddtype = dtypes[dtypename] = _ftype2dtype(element._fType)
+                        code.append("        begin = cursor.index")
+                        code.append("        print('{0}')".format(_safename(element._fName)))
                         code.append("        self._{0} = cursor.array(source, {1}, cls.{2})".format(_safename(element._fName), element._fArrayLength, dtypename))
+                        code.append("        end = cursor.index")
+                        code.append("        print(source.data(begin, end).tobytes())")
                         fields.append(_safename(element._fName))
                         if fielddtype == "None":
                             recarray.append("raise ValueError('not a recarray')")
@@ -777,32 +796,49 @@ def _defineclasses(streamerinfos, classes):
                             recarray.append("out.append(({0}, {1}, {2}))".format(repr(str(element._fName.decode("ascii"))), fielddtype, element._fArrayLength))
 
                 elif isinstance(element, TStreamerLoop):
-                    code.extend(["        cursor.skip(6)",
+                    code.extend(["        print('Skip')",
+                                 "        print(source.data(cursor.index, cursor.index + 6).tobytes())"
+                                 "        cursor.skip(6)",
                                  "        for index in range(self._{0}):".format(_safename(element._fCountName)),
-                                 "            self._{0} = {1}.read(source, cursor, context, self)".format(_safename(element._fName), _safename(element._fTypeName.rstrip(b"*")))])
+                                 "            print('{0}')".format(_safename(element._fName)),
+                                 "            begin = cursor.index",
+                                 "            self._{0} = {1}.read(source, cursor, context, self)".format(_safename(element._fName), _safename(element._fTypeName.rstrip(b"*"))),
+                                 "            end = cursor.index",
+                                 "            print(source.data(begin, end).tobytes())"])
 
                 elif isinstance(element, (TStreamerObjectAnyPointer, TStreamerObjectPointer)):
                     if element._fType == uproot.const.kObjectp or element._fType == uproot.const.kAnyp:
+                        code.append("        begin = cursor.index")
                         if pyclassname in skip and _safename(element._fName) in skip[pyclassname]:
+                            code.append("        print('Undefined')")
                             code.append("        Undefined.read(source, cursor, context, self)")
                         else:
+                            code.append("        print('{0}')".format(_safename(element._fName)))
                             code.append("        self._{0} = {1}.read(source, cursor, context, self)".format(_safename(element._fName), _safename(element._fTypeName.rstrip(b"*"))))
                             fields.append(_safename(element._fName))
                             recarray.append("out.extend({0}._recarray())".format(_safename(element._fName)))
+                        code.append("        end = cursor.index")
+                        code.append("        print(source.data(begin, end).tobytes())")
                     elif element._fType == uproot.const.kObjectP or element._fType == uproot.const.kAnyP:
+                        code.append("        begin = cursor.index")
                         if pyclassname in skip and _safename(element._fName) in skip[pyclassname]:
                             code.append("        _readobjany(source, cursor, context, parent, asclass=Undefined)")
                             hasreadobjany = True
                         else:
+                            code.append("        print('{0}')".format(_safename(element._fName)))
                             code.append("        self._{0} = _readobjany(source, cursor, context, parent)".format(_safename(element._fName)))
                             hasreadobjany = True
                             fields.append(_safename(element._fName))
                             recarray.append("raise ValueError('not a recarray')")
+                        code.append("        end = cursor.index")
+                        code.append("        print(source.data(begin, end).tobytes())")
                     else:
                         code.append("        _raise_notimplemented({0}, {1}, source, cursor)".format(repr(element.__class__.__name__), repr(repr(element.__dict__))))
                         recarray.append("raise ValueError('not a recarray')")
 
                 elif isinstance(element, TStreamerSTL):
+                    code.append("        print('{0}')".format(_safename(element._fName)))
+                    code.append("        begin = cursor.index")
                     if element._fSTLtype == uproot.const.kSTLstring or element._fTypeName == b"string":
                         code.append("        cursor.skip(6)")
                         code.append("        self._{0} = cursor.string(source)".format(_safename(element._fName)))
@@ -853,6 +889,8 @@ def _defineclasses(streamerinfos, classes):
                         fields.append(_safename(element._fName))
                     else:
                         code.append("        _raise_notimplemented({0}, {1}, source, cursor)".format(repr(element.__class__.__name__), repr(repr(element.__dict__))))
+                    code.append("        end = cursor.index")
+                    code.append("        print(source.data(begin, end).tobytes())")
                     recarray.append("raise ValueError('not a recarray')")
 
                 elif isinstance(element, TStreamerSTLstring):
@@ -860,13 +898,16 @@ def _defineclasses(streamerinfos, classes):
                     recarray.append("raise ValueError('not a recarray')")
 
                 elif isinstance(element, (TStreamerObject, TStreamerObjectAny, TStreamerString)):
+                    code.append("        print('{0}')".format(_safename(element._fName)))
+                    code.append("        begin = cursor.index")
                     if pyclassname in skip and _safename(element._fName) in skip[pyclassname]:
                         code.append("        self._{0} = Undefined.read(source, cursor, context, self)".format(_safename(element._fName)))
                     else:
                         code.append("        self._{0} = {1}.read(source, cursor, context, self)".format(_safename(element._fName), _safename(element._fTypeName)))
                         fields.append(_safename(element._fName))
                         recarray.append("out.extend({0}._recarray())".format(_safename(element._fTypeName)))
-
+                    code.append("        end = cursor.index")
+                    code.append("        print(source.data(begin, end).tobytes())")
                 else:
                     raise AssertionError(element)
 
@@ -993,6 +1034,13 @@ class TKey(ROOTObject):
         else:
             self._source = source
             self._cursor = Cursor(self._fSeekKey + self._fKeylen, origin=self._fSeekKey)
+
+        if self._fClassName == b"TTree":
+            print("Start = ", start)
+            print("Nbytes = ", self._fNbytes)
+            print("Keylen = ", self._fKeylen)
+            print("Objlen = ", self._fObjlen)
+            print("SeekKey = ", self._fSeekKey)
 
         self._context = context
         return self

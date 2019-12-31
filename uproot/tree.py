@@ -1658,6 +1658,17 @@ class TBranchMethods(object):
                     self.source = source
                     self.cursor = Cursor(self._fSeekKey + self._fKeylen)
 
+            print("Basket Key")
+            print("Start = ", start)
+            print("Nbytes = ", self._fNbytes)
+            print("Objlen = ", self._fObjlen)
+            print("Keylen = ", self._fKeylen)
+            print("Seekkey = ", self._fSeekKey)
+            print("BufferSize = ", self._fBufferSize)
+            print("NevBufSize = ", self._fNevBufSize)
+            print("NevBuf = ", self._fNevBuf)
+            print("Last = ", self._fLast)
+
         _format_small = struct.Struct(">ihiIhhii")
         _format_big = struct.Struct(">ihiIhhqq")
         _format_complete = struct.Struct(">Hiiii")
